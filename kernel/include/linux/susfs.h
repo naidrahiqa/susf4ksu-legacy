@@ -37,6 +37,7 @@ struct st_susfs_sus_path_hlist {
 	unsigned long                    target_ino;
 	char                             target_pathname[SUSFS_MAX_LEN_PATHNAME];
 	struct hlist_node                node;
+	struct list_head                 list;
 };
 #endif
 
