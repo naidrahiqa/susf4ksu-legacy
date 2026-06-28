@@ -25,6 +25,9 @@ upstream-latest/
 # Helper scripts
 fixup/gen_extra_hunks.py
 
+# Patch rejects
+*.rej
+
 # Temporary
 *.tmp
 *.log
