@@ -1103,7 +1103,7 @@ int susfs_add_sus_map(struct st_susfs_sus_map* __user user_info) {
 /* kthread for checking if /sdcard/Android is accessible */
 #define SDCARD_ANDROID_PATH "/data/media/0/Android"
 
-static void susfs_start_sdcard_monitor_fn(void) {
+void susfs_start_sdcard_monitor_fn(void) {
 	SUSFS_LOGI("sdcard monitor placeholder for 4.19\n");
 }
 
