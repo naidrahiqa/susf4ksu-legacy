@@ -1,108 +1,205 @@
-# SUSFS — Pollux Fork
+# SUSFS Backport — Legacy / Universal
 
-Fork dari [simonpunk/susfs4ksu](https://gitlab.com/simonpunk/susfs4ksu.git) branch `kernel-4.19`, dikustomisasi untuk **Redmi 12 (fire / MT6768 / Helio G88)** dengan Pollux Kernel.
+> **Backport** [simonpunk/susfs4ksu](https://gitlab.com/simonpunk/susfs4ksu.git) v2.2.0+ ke kernel lawas (4.19, NON-GKI).  
+> Universal — tidak terikat device tertentu.
 
-## Kenapa Fork?
+---
 
-- Upstream patches sering conflict dengan MTK vendor modifications
-- Custom fixup scripts untuk kompatibilitas kernel 4.19.325
-- Pre-compiled `susfs` CLI tool (skip build step)
-- Auto-detect kernel version & apply patch otomatis
-- Custom features: spoof `/proc/cpuinfo`, spoof build fingerprint
+## Daftar Isi
+
+- [Deskripsi](#deskripsi)
+- [Fitur](#fitur)
+- [Struktur Proyek](#struktur-proyek)
+- [Cara Penggunaan](#cara-penggunaan)
+  - [Auto (via apply.sh)](#auto-via-applysh)
+  - [Manual](#manual)
+  - [Verifikasi](#verifikasi)
+- [Integrasi KernelSU](#integrasi-kernelsu)
+- [Build Susfs CLI](#build-susfs-cli)
+- [Referensi Clone](#referensi-clone)
+- [Kredit](#kredit)
+
+---
+
+## Deskripsi
+
+Repositori ini menyediakan kumpulan **patch kernel, fixup script, dan konfigurasi** untuk membawa SUSFS (SUS Filesystem) ke kernel 4.19 NON-GKI.
+
+SUSFS adalah modul kernel untuk KernelSU yang menyediakan:
+
+- **Path hiding** — sembunyikan path dari deteksi root
+- **Mount hiding** — sembunyikan mount point dari `/proc/self/mounts`
+- **Kstat spoofing** — spoof stat file/directory
+- **Memory map hiding (SUS_MAP)** — sembunyikan library yang di-mmap
+- **AVC log spoofing** — spoof SELinux audit log
+- **Sus-SU** — non-kprobe root shell tanpa deteksi
+- **Uname / cmdline spoofing** — spoof informasi kernel
+- **Open redirect** — redirect akses file
+- **Try-umount** — umount path secara otomatis
+
+---
 
 ## Fitur
 
-### SUSFS Core
-- `sus_path` — sembunyikan path dari apps
-- `sus_mount` — sembunyikan mount points
-- `sus_kstat` — sembunyikan file stats
-- `sus_map` — sembunyikan memory maps
-- `spoof_uname` — spoof kernel uname
-- `spoof_cmdline_or_bootconfig` — spoof cmdline/bootconfig
-- `open_redirect` — redirect file open calls
-- `hide_ksu_susfs_symbols` — sembunyikan simbol SUSFS dari kernel
-- `auto_add_sus_kernel_mappings` — auto-add kernel mappings
+| Fitur | Kconfig | Deskripsi |
+|-------|---------|-----------|
+| SUS_PATH | `CONFIG_KSU_SUSFS_SUS_PATH` | Hidden path dari lookup/filldir |
+| SUS_MOUNT | `CONFIG_KSU_SUSFS_SUS_MOUNT` | Hidden mount dari /proc/mounts |
+| SUS_KSTAT | `CONFIG_KSU_SUSFS_SUS_KSTAT` | Spoof file stat |
+| SUS_MAP | `CONFIG_KSU_SUSFS_SUS_MAP` | Hidden memory mapping (v2.2.0) |
+| SPOOF_UNAME | `CONFIG_KSU_SUSFS_SPOOF_UNAME` | Spoof uname syscall |
+| SPOOF_CMDLINE | `CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG` | Spoof /proc/cmdline |
+| OPEN_REDIRECT | `CONFIG_KSU_SUSFS_OPEN_REDIRECT` | Redirect file open |
+| HIDE_SYMBOLS | `CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS` | Hidden ksu/susfs symbol |
+| TRY_UMOUNT | `CONFIG_KSU_SUSFS_TRY_UMOUNT` | Umount path otomatis |
+| SUS_OVERLAYFS | `CONFIG_KSU_SUSFS_SUS_OVERLAYFS` | Spoof kstat overlay |
+| SUS_SU | `CONFIG_KSU_SUSFS_SUS_SU` | Non-kprobe root shell |
+| AVC_SPOOF | (built-in via #ifdef) | Spoof SELinux audit log |
+| ENABLE_LOG | `CONFIG_KSU_SUSFS_ENABLE_LOG` | Logging kernel susfs |
+| AUTO_ADD_BIND | `CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT` | Auto-hide bind mount |
+| AUTO_ADD_KSU | `CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT` | Auto-hide KSU mount |
 
-### Pollux Additions
-- `spoof_cpuinfo` — spoof `/proc/cpuinfo` entries
-- `spoof_fingerprint` — spoof `ro.build.fingerprint`
-- `auto_apply` — auto-detect kernel version & apply patches
-- `precompiled_cli` — pre-built `susfs` binary (arm64)
+---
 
-## Struktur
+## Struktur Proyek
 
 ```
-SUSFS-Pollux/
-├── kernel/                 # Kernel patch files
-│   ├── 50_add_susfs_in_kernel-4.19.patch
-│   └── ...
-├── userspace/              # susfs CLI tool
-│   ├── arm64/
-│   │   └── susfs           # Pre-compiled binary
-│   └── ...
-├── fixup/                  # Python fixup scripts
-│   ├── fix_susfs_sched.py
-│   ├── fix_susfs_namespace.py
-│   ├── fix_supercall_susfs.py
-│   └── fix_susfs_selinux.py
-├── pollux/                 # Pollux-specific
-│   ├── patch_vermagic.py   # Vermagic bypass
-│   └── apply.sh            # Auto-apply script
-├── AGENTS.md               # AI agent instructions
-└── README.md               # This file
+backport-susf4ksu-legacy/
+├── kernel/                          # Kernel patch
+│   ├── 50_add_susfs_in_kernel-4.19.patch   # Main SUSFS patch (15+ file)
+│   ├── fs/susfs.c                   # Implementasi SUSFS module (1118 baris)
+│   ├── include/linux/
+│   │   ├── susfs.h                  # Header utama SUSFS
+│   │   └── susfs_def.h              # Flag definitions
+│   └── KernelSU/
+│       └── 10_enable_susfs_for_ksu.patch   # Patch KernelSU-Next + Kconfig
+├── patches/
+│   ├── 004-sus_map-proc-maps.patch  # SUS_MAP: hidden /proc/pid/maps
+│   └── 005-avc-log-spoofing.patch   # AVC: spoof selinux audit log
+├── fixup/
+│   ├── fix_susfs_sched.py           # MTK KABI compat
+│   ├── fix_susfs_namespace.py       # Mount hiding hooks
+│   ├── fix_supercall_susfs.py       # Type conflicts
+│   ├── fix_susfs_selinux.py         # Function placement
+│   └── gen_extra_hunks.py           # [gitignored] Generate v2.2.0 hunks
+├── pollux/
+│   ├── apply.sh                     # Auto-apply script (idempotent)
+│   ├── verify.sh                    # Verification script
+│   ├── fix_mtk_includes.py          # Clang compat MTK headers
+│   └── patch_vermagic.py            # Vermagic bypass (Xiaomi modules)
+├── userspace/
+│   ├── arm64/susfs                  # Pre-built binary
+│   └── src/
+│       ├── Android.mk               # NDK build file
+│       ├── Application.mk           # APP_ABI = arm64-v8a
+│       └── main.c                   # ksu_susfs CLI source (878 baris)
+├── upstream-419/                    # [gitignored] Reference clone 4.19
+├── upstream-latest/                 # [gitignored] Reference clone 5.x/6.x
+├── legacy-target/                   # [gitignored] Target kernel clone
+├── AGENTS.md                        # Instruksi untuk AI agent
+├── README.md                        # Dokumentasi ini
+└── .gitignore
 ```
 
-## Usage
+---
 
-### Auto-Apply (Recommended)
-```bash
-cd /sdcard/SUSFS-Pollux
+## Cara Penggunaan
+
+### Prasyarat
+
+- Kernel source **4.19** dengan KernelSU-Next sudah terintegrasi
+- `patch`, `python3`, `findutils`, `sed` tersedia
+- (Opsional) `wiggle` untuk fallback patch conflict
+
+### Auto (via apply.sh)
+
+```
 bash pollux/apply.sh /path/to/kernel/source
 ```
 
-### Manual Apply
-```bash
-# Apply kernel patch
-patch -p1 --fuzz=5 < kernel/50_add_susfs_in_kernel-4.19.patch
+Script ini **idempotent** — jika `fs/susfs.c` sudah ada, patch akan di-skip.
 
-# Apply fixup scripts
-python3 fixup/fix_susfs_sched.py /path/to/kernel/source
-python3 fixup/fix_susfs_namespace.py /path/to/kernel/source
-python3 fixup/fix_supercall_susfs.py /path/to/kernel/drivers/kernelsu/supercall/supercall.c
-python3 fixup/fix_susfs_selinux.py /path/to/kernel/source
+Urutan yang dilakukan:
+
+1. Apply main SUSFS patch (`--fuzz=5`)
+2. Fallback ke `wiggle` jika ada rejected hunks
+3. Apply `patches/*.patch` (v2.2.0 features)
+4. Jalankan 5 fixup scripts
+5. Fix `susfs_def.h` → `susfs.h` di KernelSU source
+6. (tidak otomatis) Vermagic bypass — jalankan manual jika perlu
+
+### Manual
+
+Lihat [AGENTS.md](./AGENTS.md) untuk langkah manual lengkap dengan perintah exact.
+
+### Verifikasi
+
+```
+bash pollux/verify.sh /path/to/kernel/source
 ```
 
-## Patches
+Memeriksa:
+- `fs/susfs.c` exists
+- `include/linux/susfs.h` exists
+- No stale `susfs_def.h` includes di KernelSU source
+- No `.rej` files (patch failure)
+- Defconfig SUSFS options
+- `userspace/arm64/susfs` binary exists
 
-### Core SUSFS
-- `kernel/50_add_susfs_in_kernel-4.19.patch` — Main SUSFS patch untuk kernel 4.19
+---
 
-### Pollux Additions
-- `pollux/patches/001-spoof-cpuinfo.patch` — Spoof `/proc/cpuinfo` entries
-- `pollux/patches/002-spoof-fingerprint.patch` — Spoof `ro.build.fingerprint`
-- `pollux/patches/003-auto-apply.patch` — Auto-detect kernel version
+## Integrasi KernelSU
 
-### Fixup Scripts
-- `fixup/fix_susfs_sched.py` — MTK KABI compatibility for sched.h
-- `fixup/fix_susfs_namespace.py` — fs_context-aware mount hiding
-- `fixup/fix_supercall_susfs.py` — Type conflicts in supercall.c
-- `fixup/fix_susfs_selinux.py` — SUSFS function placement in selinux.c
+Patch `kernel/KernelSU/10_enable_susfs_for_ksu.patch` harus di-apply ke **`drivers/kernelsu/`**, bukan root kernel source. Patch ini:
 
-## Todo
+- Menambahkan Kconfig menu "KernelSU - SUSFS" di `kernel/Kconfig`
+- Backport `path_umount`, `get_cred_rcu`, `can_umount` untuk kernel 4.19
+- Menambahkan hooks di `core_hook.c`, `selinux.c`, `ksu.c`, dll.
+- Memperbaiki nama fungsi bentrok dengan KSU_NAMESPACE (prefix `ksu_`)
 
-- [ ] Pre-compiled `susfs` CLI binary (arm64)
-- [ ] Spoof `/proc/cpuinfo` implementation
-- [ ] Spoof `ro.build.fingerprint` implementation
-- [ ] Auto-detect kernel version script
-- [ ] CI/CD integration test
-- [ ] Web-based SUSFS config builder
+---
 
-## Upstream
+## Build Susfs CLI
 
-Based on:
-- simonpunk/susfs4ksu `kernel-4.19` branch
-- KernelSU-Next `legacy-susfs` branch
+```
+cd userspace/src && ndk-build
+```
 
-## License
+Output: `ksu_susfs` binary untuk `arm64-v8a`.  
+Pre-built binary sudah tersedia di `userspace/arm64/susfs`.
 
-Same as susfs4ksu (GPLv2).
+CLI commands yang didukung:
+- `add_sus_path`, `add_sus_path_loop`
+- `add_sus_mount`, `hide_sus_mnts_for_non_su_procs`
+- `add_sus_kstat`, `update_sus_kstat`, `add_sus_kstat_statically`
+- `add_try_umount`, `run_try_umount`
+- `set_uname`, `set_cmdline_or_bootconfig`
+- `add_open_redirect`
+- `add_sus_map`
+- `enable_avc_log_spoofing`
+- `sus_su <mode>` — non-kprobe root shell
+- `enable_log`, `show <version|enabled_features|variant>`
+
+---
+
+## Referensi Clone
+
+| Direktori | Branch | Deskripsi |
+|-----------|--------|-----------|
+| `upstream-419/` | `kernel-4.19` | Upstream SUSFS untuk 4.19 |
+| `upstream-latest/` | `main` | Upstream SUSFS untuk 5.x/6.x |
+| `legacy-target/` | — | Target kernel spesifik device |
+
+Direktori ini **gitignored** dan diisi saat `prepare_build.sh` dijalankan.
+
+---
+
+## Kredit
+
+- [simonpunk](https://gitlab.com/simonpunk) — Pengembang asli SUSFS
+- [KernelSU](https://kernelsu.org) — KernelSU project
+- [Pollux Kernel](https://github.com/dereference) — Consumer kernel (Redmi 12)
+
+---
+
+<p align="center"><sub>SUSFS Backport — GPLv2</sub></p>

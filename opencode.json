@@ -1,22 +1,15 @@
 {
-  "name": "SUSFS-Pollux",
-  "description": "SUSFS v2.2.0 backported to kernel 4.19 untuk Redmi 12 (fire / MT6768 / Helio G88)",
-  "instructions": "Baca AGENTS.md untuk konteks proyek. Jangan apply patch ke kernel 5.x/6.x. Selalu cek .rej files setelah patch.",
-  "tools": {
-    "required": ["python3", "git"]
-  },
-  "plugins": [],
-  "agents": [],
-  "mcpServers": [],
-  "permissions": {
-    "approval": "default",
-    "allow": [
-      "git",
-      "python3",
-      "patch",
-      "sed",
-      "find"
-    ]
-  },
-  "version": "1.0.0"
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["AGENTS.md"],
+  "lsp": {
+    "clangd": {
+      "extensions": [".c", ".h"]
+    },
+    "pyright": {
+      "extensions": [".py"]
+    },
+    "bash": {
+      "extensions": [".sh"]
+    }
+  }
 }
