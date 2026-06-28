@@ -82,11 +82,14 @@ backport-susf4ksu-legacy/
 │   ├── fix_supercall_susfs.py       # Type conflicts
 │   ├── fix_susfs_selinux.py         # Function placement
 │   └── gen_extra_hunks.py           # [gitignored] Generate v2.2.0 hunks
-├── pollux/
-│   ├── apply.sh                     # Auto-apply script (idempotent)
-│   ├── verify.sh                    # Verification script
-│   ├── fix_mtk_includes.py          # Clang compat MTK headers
-│   └── patch_vermagic.py            # Vermagic bypass (Xiaomi modules)
+├── core-scripts/
+│   ├── apply.sh                     # Auto-apply script (idempotent, universal)
+│   └── verify.sh                    # Verification script (dynamic defconfig)
+├── vendor/
+│   ├── mediatek/
+│   │   └── fix_mtk_includes.py      # Clang compat MTK headers
+│   └── xiaomi/
+│       └── patch_vermagic.py        # Vermagic bypass (Xiaomi modules)
 ├── userspace/
 │   ├── arm64/susfs                  # Pre-built binary
 │   └── src/
@@ -114,19 +117,23 @@ backport-susf4ksu-legacy/
 ### Auto (via apply.sh)
 
 ```
-bash pollux/apply.sh /path/to/kernel/source
+bash core-scripts/apply.sh /path/to/kernel/source [--mtk] [--xiaomi-vermagic]
 ```
 
 Script ini **idempotent** — jika `fs/susfs.c` sudah ada, patch akan di-skip.
+
+Menerima flag opsional:
+- `--mtk` : Menerapkan patch platform MediaTek (`fix_mtk_includes.py`)
+- `--xiaomi-vermagic` : Menerapkan bypass vermagic Xiaomi (`patch_vermagic.py`)
 
 Urutan yang dilakukan:
 
 1. Apply main SUSFS patch (`--fuzz=5`)
 2. Fallback ke `wiggle` jika ada rejected hunks
 3. Apply `patches/*.patch` (v2.2.0 features)
-4. Jalankan 5 fixup scripts
+4. Jalankan 4 fixup scripts utama
 5. Fix `susfs_def.h` → `susfs.h` di KernelSU source
-6. (tidak otomatis) Vermagic bypass — jalankan manual jika perlu
+6. Jalankan fixup vendor (`--mtk` dan/atau `--xiaomi-vermagic`) jika flag diberikan.
 
 ### Manual
 
@@ -135,7 +142,7 @@ Lihat [AGENTS.md](./AGENTS.md) untuk langkah manual lengkap dengan perintah exac
 ### Verifikasi
 
 ```
-bash pollux/verify.sh /path/to/kernel/source
+bash core-scripts/verify.sh /path/to/kernel/source [nama_defconfig]
 ```
 
 Memeriksa:

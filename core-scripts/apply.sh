@@ -1,13 +1,47 @@
 #!/bin/bash
-# SUSFS-Pollux: Auto-apply script
+# SUSFS Universal Backport: Auto-apply script
 # Applies SUSFS patches and fixups to kernel source
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-KERNEL_DIR="${1:-.}"
+KERNEL_DIR=""
+APPLY_MTK=false
+APPLY_VERMAGIC=false
 
-echo "=== SUSFS-Pollux Auto-Apply ==="
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --mtk)
+            APPLY_MTK=true
+            shift
+            ;;
+        --xiaomi-vermagic)
+            APPLY_VERMAGIC=true
+            shift
+            ;;
+        -*)
+            echo "Unknown option: $1"
+            echo "Usage: $0 <kernel_dir> [--mtk] [--xiaomi-vermagic]"
+            exit 1
+            ;;
+        *)
+            if [ -z "$KERNEL_DIR" ]; then
+                KERNEL_DIR="$1"
+            else
+                echo "Error: Multiple kernel directories specified"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$KERNEL_DIR" ]; then
+    KERNEL_DIR="."
+fi
+
+echo "=== SUSFS Universal Auto-Apply ==="
 echo "Kernel: $KERNEL_DIR"
 echo ""
 
@@ -108,10 +142,20 @@ echo "5. Fixing susfs_def.h to susfs.h includes..."
 find -L "$KERNEL_DIR/drivers/kernelsu" -type f \( -name '*.c' -o -name '*.h' \) \
     -exec sed -i 's|susfs_def\.h|susfs.h|g' {} + 2>/dev/null || true
 echo "   (also fixing include guards in susfs_def.h if present)"
-if [ -f "$KERNEL_DIR/include/linux/susfs_def.h" ]; then
-    echo "   Note: susfs_def.h kept for SUS_PATH/MOUNT/KSTAT flag definitions"
+
+# Optional Vendor specific fixes
+if [ "$APPLY_MTK" = true ]; then
+    echo ""
+    echo "Applying MediaTek specific fixes..."
+    python3 "$SCRIPT_DIR/../vendor/mediatek/fix_mtk_includes.py" "$KERNEL_DIR" || true
+fi
+
+if [ "$APPLY_VERMAGIC" = true ]; then
+    echo ""
+    echo "Applying Xiaomi vermagic bypass..."
+    python3 "$SCRIPT_DIR/../vendor/xiaomi/patch_vermagic.py" "$KERNEL_DIR" || true
 fi
 
 echo ""
-echo "=== SUSFS-Pollux Apply Complete ==="
+echo "=== SUSFS Universal Apply Complete ==="
 echo "Check for .rej files if any patches failed"
