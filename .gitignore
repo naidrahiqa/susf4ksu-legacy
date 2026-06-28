@@ -1,0 +1,31 @@
+# SUSFS-Pollux
+
+# Build artifacts
+*.ko
+*.o
+*.mod
+*.mod.c
+*.order
+*.symvers
+Module.symvers
+modules_order
+
+# SUSFS build
+susfs.ko
+susfs.o
+
+# Pre-compiled binaries (keep arm64/susfs)
+!userspace/arm64/susfs
+
+# Reference clones (upstream sources)
+legacy-target/
+upstream-419/
+upstream-latest/
+
+# Helper scripts
+fixup/gen_extra_hunks.py
+
+# Temporary
+*.tmp
+*.log
+.cache/

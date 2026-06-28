@@ -1,0 +1,66 @@
+diff --git a/fs/proc/task_mmu.c b/fs/proc/task_mmu.c
+index b15a4719a8c8..fb46ebd7e768 100644
+--- a/fs/proc/task_mmu.c
++++ b/fs/proc/task_mmu.c
+@@ -23,6 +23,9 @@
+ #include <linux/uaccess.h>
+ #include <linux/pkeys.h>
+ #include <linux/mm_inline.h>
++#if defined(CONFIG_KSU_SUSFS_SUS_MAP) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)
++#include <linux/susfs_def.h>
++#endif
+ #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+ #include <linux/susfs_def.h>
+ #endif
+@@ -361,6 +364,12 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
+ 
+ 	if (file) {
+ 		struct inode *inode = file_inode(vma->vm_file);
++#ifdef CONFIG_KSU_SUSFS_SUS_MAP
++		if (unlikely(inode->i_state & INODE_STATE_SUS_MAP)) {
++			return;
++		}
++#endif
++#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++		if (unlikely(inode->i_state & INODE_STATE_OPEN_REDIRECT)) {
++			/* spoofed name handling if needed */
++		}
++#endif
++#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+ 		if (unlikely(inode->i_state & INODE_STATE_SUS_KSTAT)) {
+ 			susfs_sus_ino_for_show_map_vma(inode->i_ino, &dev, &ino);
+ 			goto bypass_orig_flow;
+ 		}
++#endif
+ 		dev = inode->i_sb->s_dev;
+ 		ino = inode->i_ino;
+ #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+@@ -380,6 +389,25 @@ show_map_vma(struct seq_file *m, struct vm_area_struct *vma)
+ 
+ }
+ 
++#ifdef CONFIG_KSU_SUSFS_SUS_MAP
++static int susfs_show_smap(struct seq_file *m, struct vm_area_struct *vma)
++{
++	if (vma->vm_file) {
++		struct inode *inode = file_inode(vma->vm_file);
++		if (unlikely(inode->i_state & INODE_STATE_SUS_MAP))
++			return 0;
++	}
++	return show_smap(m, vma);
++}
++
++static int susfs_show_smaps_rollup(struct seq_file *m, struct vm_area_struct *vma)
++{
++	if (vma->vm_file) {
++		struct inode *inode = file_inode(vma->vm_file);
++		if (unlikely(inode->i_state & INODE_STATE_SUS_MAP))
++			return 0;
++	}
++	return show_smaps_rollup(m, vma);
++}
++#endif
++
+ #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+ extern void susfs_sus_ino_for_show_map_vma(unsigned long ino, dev_t *out_dev, unsigned long *out_ino);
+ #endif
