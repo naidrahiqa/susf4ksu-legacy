@@ -1229,6 +1229,7 @@ index 1ba6d853..e4c65106 100644
 +	susfs_set_init_sid();
 +	susfs_set_ksu_sid();
 +	susfs_set_zygote_sid();
++	susfs_set_priv_app_sid();
 +#endif
 +
  	rcu_read_unlock();
@@ -1261,9 +1262,11 @@ index 4ba20b04..e171e010 100644
 +#ifdef CONFIG_KSU_SUSFS
 +#define KERNEL_INIT_DOMAIN "u:r:init:s0"
 +#define KERNEL_ZYGOTE_DOMAIN "u:r:zygote:s0"
++#define KERNEL_PRIV_APP_DOMAIN "u:r:priv_app:s0:c512,c768"
 +u32 susfs_ksu_sid = 0;
 +u32 susfs_init_sid = 0;
 +u32 susfs_zygote_sid = 0;
++u32 susfs_priv_app_sid = 0;
 +#endif
 +
  static int transive_to_domain(const char *domain)
@@ -1376,6 +1379,15 @@ index 4ba20b04..e171e010 100644
 +	return unlikely(current_sid() == susfs_zygote_sid);
 +}
 +
++void susfs_set_priv_app_sid(void)
++{
++	susfs_set_sid(KERNEL_PRIV_APP_DOMAIN, &susfs_priv_app_sid);
++}
++
++bool susfs_is_current_priv_app_domain(void) {
++	return unlikely(current_sid() == susfs_priv_app_sid);
++}
++
 +void susfs_set_ksu_sid(void)
 +{
 +	susfs_set_sid(KERNEL_SU_DOMAIN, &susfs_ksu_sid);
@@ -1430,6 +1442,8 @@ index 07120c25..d0dfdf9c 100644
 +u32 susfs_get_current_sid(void);
 +void susfs_set_zygote_sid(void);
 +bool susfs_is_current_zygote_domain(void);
++void susfs_set_priv_app_sid(void);
++bool susfs_is_current_priv_app_domain(void);
 +void susfs_set_ksu_sid(void);
 +bool susfs_is_current_ksu_domain(void);
 +void susfs_set_init_sid(void);

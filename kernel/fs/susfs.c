@@ -935,6 +935,8 @@ out:
 #endif
 
 /* susfs avc log spoofing */
+bool susfs_is_avc_log_spoofing_enabled __read_mostly = false;
+
 void susfs_set_avc_log_spoofing(void __user **user_info) {
 	struct st_susfs_avc_log_spoofing info = {0};
 
@@ -943,7 +945,8 @@ void susfs_set_avc_log_spoofing(void __user **user_info) {
 		goto out;
 	}
 
-	pr_info("susfs: avc_log_spoofing %s\n", info.enabled ? "enabled" : "disabled");
+	WRITE_ONCE(susfs_is_avc_log_spoofing_enabled, info.enabled);
+	SUSFS_LOGI("avc_log_spoofing %s\n", info.enabled ? "enabled" : "disabled");
 	info.err = 0;
 out:
 	if (copy_to_user(&((struct st_susfs_avc_log_spoofing __user*)*user_info)->err, &info.err, sizeof(info.err)))
@@ -1104,8 +1107,33 @@ int susfs_add_sus_map(struct st_susfs_sus_map* __user user_info) {
 /* kthread for checking if /sdcard/Android is accessible */
 #define SDCARD_ANDROID_PATH "/data/media/0/Android"
 
+static int susfs_sdcard_monitor_kthread(void *data) {
+	struct path p;
+	int ret;
+
+	SUSFS_LOGI("sdcard monitor kthread started\n");
+
+	while (!kthread_should_stop()) {
+		ret = kern_path(SDCARD_ANDROID_PATH, LOOKUP_FOLLOW, &p);
+		if (!ret) {
+			path_put(&p);
+			SUSFS_LOGI("/sdcard/Android is now accessible, stopping monitor\n");
+			break;
+		}
+		msleep(5000);
+	}
+	return 0;
+}
+
 void susfs_start_sdcard_monitor_fn(void) {
-	SUSFS_LOGI("sdcard monitor placeholder for 4.19\n");
+	struct task_struct *task;
+
+	task = kthread_run(susfs_sdcard_monitor_kthread, NULL, "susfs_sdcard_mon");
+	if (IS_ERR(task)) {
+		SUSFS_LOGE("failed to start sdcard monitor kthread\n");
+	} else {
+		SUSFS_LOGI("sdcard monitor kthread started (pid: %d)\n", task->pid);
+	}
 }
 
 /* susfs_init */
