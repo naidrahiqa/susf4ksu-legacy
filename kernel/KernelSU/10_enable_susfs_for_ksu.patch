@@ -134,7 +134,15 @@ index 67f177f4..5b4100b7 100644
 +    help
 +      - Allow redirecting a target path to be opened with another user-defined path.
 +      - Effective only on processes with uid < 2000.
-+      - Please be reminded that process with open access to the target and redirected path can be detected.
++      - Please be reminded that process with open access to the target and redirect path can be detected.
++
++config KSU_SUSFS_SUS_MAP
++    bool "Enable to hide mapped paths in /proc/pid/maps and smaps"
++    depends on KSU_SUSFS
++    default y
++    help
++      - Hide user-defined sus paths from /proc/pid/maps and smaps.
++      - Effective only on umounted processes.
 +
 +endmenu
 +
