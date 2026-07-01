@@ -106,7 +106,7 @@ int susfs_add_sus_path(struct st_susfs_sus_path* __user user_info) {
 	}
 
 	new_entry->target_ino = info.target_ino;
-	strncpy(new_entry->target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+	strscpy(new_entry->target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
 	if (susfs_update_sus_path_inode(new_entry->target_pathname)) {
 		kfree(new_entry);
 		return 1;
@@ -652,11 +652,11 @@ void susfs_auto_add_try_umount_for_bind_mount(struct path *path) {
 
 #ifdef CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
 	if (is_magic_mount_path) {
-		strncpy(new_list->info.target_pathname, dpath + strlen(MAGIC_MOUNT_WORKDIR), SUSFS_MAX_LEN_PATHNAME-1);
+		strscpy(new_list->info.target_pathname, dpath + strlen(MAGIC_MOUNT_WORKDIR), SUSFS_MAX_LEN_PATHNAME-1);
 		goto out_add_to_list;
 	}
 #endif
-	strncpy(new_list->info.target_pathname, dpath, SUSFS_MAX_LEN_PATHNAME-1);
+	strscpy(new_list->info.target_pathname, dpath, SUSFS_MAX_LEN_PATHNAME-1);
 
 #ifdef CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
 out_add_to_list:
@@ -694,14 +694,14 @@ int susfs_set_uname(struct st_susfs_uname* __user user_info) {
 
 	spin_lock(&susfs_uname_spin_lock);
 	if (!strcmp(info.release, "default")) {
-		strncpy(my_uname.release, utsname()->release, __NEW_UTS_LEN);
+		strscpy(my_uname.release, utsname()->release, __NEW_UTS_LEN);
 	} else {
-		strncpy(my_uname.release, info.release, __NEW_UTS_LEN);
+		strscpy(my_uname.release, info.release, __NEW_UTS_LEN);
 	}
 	if (!strcmp(info.version, "default")) {
-		strncpy(my_uname.version, utsname()->version, __NEW_UTS_LEN);
+		strscpy(my_uname.version, utsname()->version, __NEW_UTS_LEN);
 	} else {
-		strncpy(my_uname.version, info.version, __NEW_UTS_LEN);
+		strscpy(my_uname.version, info.version, __NEW_UTS_LEN);
 	}
 	spin_unlock(&susfs_uname_spin_lock);
 	SUSFS_LOGI("setting spoofed release: '%s', version: '%s'\n",
@@ -712,8 +712,8 @@ int susfs_set_uname(struct st_susfs_uname* __user user_info) {
 void susfs_spoof_uname(struct new_utsname* tmp) {
 	if (unlikely(my_uname.release[0] == '\0' || spin_is_locked(&susfs_uname_spin_lock)))
 		return;
-	strncpy(tmp->release, my_uname.release, __NEW_UTS_LEN);
-	strncpy(tmp->version, my_uname.version, __NEW_UTS_LEN);
+	strscpy(tmp->release, my_uname.release, __NEW_UTS_LEN);
+	strscpy(tmp->version, my_uname.version, __NEW_UTS_LEN);
 }
 #endif
 
@@ -841,8 +841,8 @@ int susfs_add_open_redirect(struct st_susfs_open_redirect* __user user_info) {
 	}
 
 	new_entry->target_ino = info.target_ino;
-	strncpy(new_entry->target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
-	strncpy(new_entry->redirected_pathname, info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+	strscpy(new_entry->target_pathname, info.target_pathname, SUSFS_MAX_LEN_PATHNAME-1);
+	strscpy(new_entry->redirected_pathname, info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME-1);
 	if (susfs_update_open_redirect_inode(new_entry)) {
 		SUSFS_LOGE("failed adding path '%s' to OPEN_REDIRECT_HLIST\n", new_entry->target_pathname);
 		kfree(new_entry);
