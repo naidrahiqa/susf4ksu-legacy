@@ -71,8 +71,10 @@ backport-susf4ksu-legacy/
 │   ├── include/linux/
 │   │   ├── susfs.h                  # Header utama SUSFS
 │   │   └── susfs_def.h              # Flag definitions
-│   └── KernelSU/
-│       └── 10_enable_susfs_for_ksu.patch   # Patch KernelSU-Next + Kconfig
+│   ├── KernelSU/
+│   │   └── 10_enable_susfs_for_ksu.patch   # Patch untuk official KernelSU (prctl-based)
+│   └── KernelSU-Next/
+│       └── 007-susfs-for-kernelsu-next.patch  # Patch untuk KernelSU-Next (reboot-based)
 ├── patches/
 │   ├── 004-sus_map-proc-maps.patch  # SUS_MAP: hidden /proc/pid/maps
 │   └── 005-avc-log-spoofing.patch   # AVC: spoof selinux audit log
@@ -117,12 +119,17 @@ backport-susf4ksu-legacy/
 ### Auto (via apply.sh)
 
 ```
+# Untuk official KernelSU (weishu)
 bash core-scripts/apply.sh /path/to/kernel/source [--mtk] [--xiaomi-vermagic]
+
+# Untuk KernelSU-Next
+bash core-scripts/apply.sh /path/to/kernel/source --kernelsu-next [--mtk] [--xiaomi-vermagic]
 ```
 
 Script ini **idempotent** — jika `fs/susfs.c` sudah ada, patch akan di-skip.
 
 Menerima flag opsional:
+- `--kernelsu-next` : Gunakan patch untuk KernelSU-Next (dispatch via `sys_reboot`)
 - `--mtk` : Menerapkan patch platform MediaTek (`fix_mtk_includes.py`)
 - `--xiaomi-vermagic` : Menerapkan bypass vermagic Xiaomi (`patch_vermagic.py`)
 
@@ -157,12 +164,23 @@ Memeriksa:
 
 ## Integrasi KernelSU
 
+### Official KernelSU (weishu)
 Patch `kernel/KernelSU/10_enable_susfs_for_ksu.patch` harus di-apply ke **`drivers/kernelsu/`**, bukan root kernel source. Patch ini:
 
 - Menambahkan Kconfig menu "KernelSU - SUSFS" di `kernel/Kconfig`
 - Backport `path_umount`, `get_cred_rcu`, `can_umount` untuk kernel 4.19
 - Menambahkan hooks di `core_hook.c`, `selinux.c`, `ksu.c`, dll.
-- Memperbaiki nama fungsi bentrok dengan KSU_NAMESPACE (prefix `ksu_`)
+- Dispatch via **prctl** → `ksu_handle_prctl()` di `core_hook.c`
+
+### KernelSU-Next
+Patch `kernel/KernelSU-Next/007-susfs-for-kernelsu-next.patch` di-apply ke **KernelSU-Next source**. Patch ini:
+
+- Menambahkan Kconfig menu "KernelSU - SUSFS" di `kernel/Kconfig`
+- Dispatch via **sys_reboot** → `ksu_handle_sys_reboot()` di `supercall/dispatch.c`
+- Hook di `kernel/reboot.c` untuk intercept `SYSCALL_DEFINE4(reboot)`
+- Memanggil `susfs_init()` di `kernel/core/init.c`
+
+> **Perbedaan utama:** Official KSU pakai `prctl()`, KernelSU-Next pakai `sys_reboot()` dengan magic number `SUSFS_MAGIC`.
 
 ---
 

@@ -59,7 +59,11 @@ Proyek ini dirancang sebagai **dependency project**. Kamu harus menerapkan patch
 ### Cara Otomatis (Direkomendasikan)
 Jalankan script auto-apply untuk menerapkan semua patch dan fixup secara berurutan:
 ```bash
+# Untuk official KernelSU (weishu)
 bash core-scripts/apply.sh /path/ke/kernel/source [--mtk] [--xiaomi-vermagic]
+
+# Untuk KernelSU-Next
+bash core-scripts/apply.sh /path/ke/kernel/source --kernelsu-next [--mtk] [--xiaomi-vermagic]
 ```
 *Script ini bersifat **idempotent**. Jika `fs/susfs.c` sudah terdeteksi di kernel target, proses apply patch utama akan dilewati untuk mencegah konflik.*
 
@@ -87,6 +91,14 @@ cd drivers/kernelsu
 patch -p1 --fuzz=3 < /path/ke/backport-repo/kernel/KernelSU/10_enable_susfs_for_ksu.patch
 cd ../..
 ```
+
+> **Untuk KernelSU-Next:** Gunakan patch yang sesuai:
+> ```bash
+> cd KernelSU  # atau drivers/kernelsu, tergantung struktur
+> patch -p1 --fuzz=3 < /path/ke/backport-repo/kernel/KernelSU-Next/007-susfs-for-kernelsu-next.patch
+> cd ../..
+> ```
+> **Note:** Patch KernelSU-Next mengasumsikan adanya `kernel/supercall/dispatch.c`. Jika file tidak ada, sesuaikan path manual.
 
 #### Langkah 3: Terapkan Patch Tambahan v2.2.0
 Terapkan patch tambahan untuk fitur `SUS_MAP` dan `AVC_SPOOF` dari root kernel source:
@@ -164,6 +176,12 @@ Setelah kernel berhasil dicompile dan di-flash, kamu bisa menggunakan CLI tool `
 > [!IMPORTANT]
 > **Hanya untuk Kernel 4.19**
 > Patch ini dikhususkan untuk kernel lawas 4.19. Jangan mencoba menerapkannya pada kernel 5.x atau 6.x karena struktur internal kernel (seperti VFS dan task_struct) sudah jauh berbeda dan akan menyebabkan conflict parah.
+
+> [!WARNING]
+> **Perbedaan Official KernelSU vs KernelSU-Next**
+> - **Official KernelSU** (weishu): Dispatch SUSFS via `prctl()` di `kernel/core_hook.c` → `ksu_handle_prctl()`
+> - **KernelSU-Next**: Dispatch SUSFS via `sys_reboot()` di `kernel/supercall/dispatch.c` → `ksu_handle_sys_reboot()`
+> - Patch berbeda untuk masing-masing arsitektur. Gunakan `10_enable_susfs_for_ksu.patch` untuk official, `007-susfs-for-kernelsu-next.patch` untuk KernelSU-Next.
 
 > [!WARNING]
 > **CONFIG_FUSE_PASSTHROUGH Harus Dinonaktifkan**

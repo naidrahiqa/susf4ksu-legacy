@@ -8,6 +8,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 KERNEL_DIR=""
 APPLY_MTK=false
 APPLY_VERMAGIC=false
+KSU_NEXT=false
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -20,9 +21,13 @@ while [[ $# -gt 0 ]]; do
             APPLY_VERMAGIC=true
             shift
             ;;
+        --kernelsu-next)
+            KSU_NEXT=true
+            shift
+            ;;
         -*)
             echo "Unknown option: $1"
-            echo "Usage: $0 <kernel_dir> [--mtk] [--xiaomi-vermagic]"
+            echo "Usage: $0 <kernel_dir> [--mtk] [--xiaomi-vermagic] [--kernelsu-next]"
             exit 1
             ;;
         *)
@@ -94,6 +99,54 @@ else
     cd "$SCRIPT_DIR"
 fi
 
+# Apply KernelSU integration patch
+echo ""
+if [ "$KSU_NEXT" = true ]; then
+    echo "Applying KernelSU-Next SUSFS integration patch..."
+    KSU_PATCH="$SCRIPT_DIR/../kernel/KernelSU-Next/007-susfs-for-kernelsu-next.patch"
+    # Detect KernelSU-Next directory
+    KSU_DIR=""
+    for candidate in "$KERNEL_DIR/KernelSU" "$KERNEL_DIR/drivers/kernelsu" "$KERNEL_DIR/kernel/KernelSU"; do
+        if [ -d "$candidate" ]; then
+            KSU_DIR="$candidate"
+            break
+        fi
+    done
+    if [ -n "$KSU_DIR" ] && [ -f "$KSU_PATCH" ]; then
+        cd "$KSU_DIR"
+        if patch -p1 --fuzz=3 < "$KSU_PATCH"; then
+            echo "  ✓ KernelSU-Next patch applied"
+        else
+            echo "  ⚠ KernelSU-Next patch had issues (check .rej files)"
+        fi
+        cd "$SCRIPT_DIR"
+    else
+        echo "  ⚠ KernelSU directory or patch not found, skipping"
+        echo "    KSU_DIR=$KSU_DIR KSU_PATCH=$KSU_PATCH"
+    fi
+else
+    echo "Applying official KernelSU SUSFS integration patch..."
+    KSU_PATCH="$SCRIPT_DIR/../kernel/KernelSU/10_enable_susfs_for_ksu.patch"
+    KSU_DIR=""
+    for candidate in "$KERNEL_DIR/KernelSU" "$KERNEL_DIR/drivers/kernelsu" "$KERNEL_DIR/kernel/KernelSU"; do
+        if [ -d "$candidate" ]; then
+            KSU_DIR="$candidate"
+            break
+        fi
+    done
+    if [ -n "$KSU_DIR" ] && [ -f "$KSU_PATCH" ]; then
+        cd "$KSU_DIR"
+        if patch -p1 --fuzz=3 < "$KSU_PATCH"; then
+            echo "  ✓ KernelSU patch applied"
+        else
+            echo "  ⚠ KernelSU patch had issues (check .rej files)"
+        fi
+        cd "$SCRIPT_DIR"
+    else
+        echo "  ⚠ KernelSU directory or patch not found, skipping"
+    fi
+fi
+
 # Apply additional SUSFS patches (v2.2.0 features)
 echo ""
 echo "Applying additional SUSFS v2.2.0 patches..."
@@ -126,8 +179,22 @@ python3 "$SCRIPT_DIR/../fixup/fix_susfs_namespace.py" "$KERNEL_DIR" || true
 
 # 3. Fix supercall.c
 echo "3. Fixing supercall.c type conflicts..."
-SUPERCALL_FILE="$KERNEL_DIR/drivers/kernelsu/supercall/supercall.c"
-if [ -f "$SUPERCALL_FILE" ]; then
+SUPERCALL_FILE=""
+if [ "$KSU_NEXT" = true ]; then
+    # KernelSU-Next: try multiple possible locations
+    for candidate in \
+        "$KERNEL_DIR/drivers/kernelsu/supercall/supercall.c" \
+        "$KERNEL_DIR/KernelSU/kernel/supercall/supercall.c" \
+        "$KERNEL_DIR/kernel/KernelSU/supercall/supercall.c"; do
+        if [ -f "$candidate" ]; then
+            SUPERCALL_FILE="$candidate"
+            break
+        fi
+    done
+else
+    SUPERCALL_FILE="$KERNEL_DIR/drivers/kernelsu/supercall/supercall.c"
+fi
+if [ -n "$SUPERCALL_FILE" ] && [ -f "$SUPERCALL_FILE" ]; then
     python3 "$SCRIPT_DIR/../fixup/fix_supercall_susfs.py" "$SUPERCALL_FILE" || true
 else
     echo "Warning: supercall.c not found, skipping"
@@ -139,8 +206,21 @@ python3 "$SCRIPT_DIR/../fixup/fix_susfs_selinux.py" "$KERNEL_DIR" || true
 
 # Fix susfs_def.h → susfs.h includes
 echo "5. Fixing susfs_def.h to susfs.h includes..."
-find -L "$KERNEL_DIR/drivers/kernelsu" -type f \( -name '*.c' -o -name '*.h' \) \
-    -exec sed -i 's|susfs_def\.h|susfs.h|g' {} + 2>/dev/null || true
+if [ "$KSU_NEXT" = true ]; then
+    # KernelSU-Next: try multiple possible locations
+    for ksu_dir in \
+        "$KERNEL_DIR/drivers/kernelsu" \
+        "$KERNEL_DIR/KernelSU/kernel" \
+        "$KERNEL_DIR/kernel/KernelSU"; do
+        if [ -d "$ksu_dir" ]; then
+            find -L "$ksu_dir" -type f \( -name '*.c' -o -name '*.h' \) \
+                -exec sed -i 's|susfs_def\.h|susfs.h|g' {} + 2>/dev/null || true
+        fi
+    done
+else
+    find -L "$KERNEL_DIR/drivers/kernelsu" -type f \( -name '*.c' -o -name '*.h' \) \
+        -exec sed -i 's|susfs_def\.h|susfs.h|g' {} + 2>/dev/null || true
+fi
 echo "   (also fixing include guards in susfs_def.h if present)"
 
 # Optional Vendor specific fixes

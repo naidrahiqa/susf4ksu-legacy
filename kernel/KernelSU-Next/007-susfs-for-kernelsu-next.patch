@@ -1,0 +1,237 @@
+diff --git a/kernel/Kconfig b/kernel/Kconfig
+index XXXXXXX..XXXXXXX 100644
+--- a/kernel/Kconfig
++++ b/kernel/Kconfig
+@@ -2,6 +2,97 @@ menu "KernelSU"
+ 
+ config KSU
+ 	tristate "KernelSU function support"
+ 	default y
++
++menu "KernelSU - SUSFS"
++config KSU_SUSFS
++	bool "KernelSU addon - SUSFS"
++	depends on KSU
++	depends on THREAD_INFO_IN_TASK
++	default y
++	help
++	  Patch and Enable SUSFS to kernel with KernelSU.
++
++config KSU_SUSFS_SUS_PATH
++	bool "Enable to hide suspicious path"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow hiding the user-defined path and all its sub-paths from various system calls.
++	  - Effective only on zygote spawned user app process with uid >= 10000.
++
++config KSU_SUSFS_SUS_MOUNT
++	bool "Enable to hide suspicious mounts"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow hiding all sus mounts from /proc/self/[mounts|mountinfo|mountstat] for non-su processes.
++
++config KSU_SUSFS_SUS_KSTAT
++	bool "Enable to spoof suspicious kstat"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow spoofing the kstat of user-defined file/directory.
++	  - Effective only on zygote spawned user app process with uid >= 10000.
++
++config KSU_SUSFS_SPOOF_UNAME
++	bool "Enable to spoof uname"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow spoofing the string returned by uname syscall to user-defined string.
++	  - Effective on all processes.
++
++config KSU_SUSFS_ENABLE_LOG
++	bool "Enable logging susfs log to kernel"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow logging susfs log to kernel, uncheck it to completely disable all susfs log.
++
++config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
++	bool "Enable to automatically hide ksu and susfs symbols from /proc/kallsyms"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Automatically hide ksu and susfs symbols from '/proc/kallsyms'.
++	  - Effective on all processes.
++
++config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++	bool "Enable to spoof /proc/bootconfig (gki) or /proc/cmdline (non-gki)"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Spoof the output of /proc/bootconfig (gki) or /proc/cmdline (non-gki) with a user-defined file.
++	  - Effective on all processes.
++
++config KSU_SUSFS_OPEN_REDIRECT
++	bool "Enable to redirect a path to be opened with another path"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow redirecting a target path to be opened with another user-defined path.
++	  - Effective only on processes with pre-defined uid scheme.
++
++config KSU_SUSFS_SUS_MAP
++	bool "Enable to hide some mmapped real file from different proc maps interfaces"
++	depends on KSU_SUSFS
++	default y
++	help
++	  - Allow hiding mmapped real file from /proc/<pid>/[maps|smaps|smaps_rollup|map_files|mem|pagemap]
++	  - Effective only on zygote spawned umounted user app process >= 10000.
++
++endmenu
++
+ endmenu
+ 
+diff --git a/kernel/Kbuild b/kernel/Kbuild
+index XXXXXXX..XXXXXXX 100644
+--- a/kernel/Kbuild
++++ b/kernel/Kbuild
+@@ -4,6 +4,16 @@ kernelsu-objs += feature/kernel_umount.o
+ kernelsu-objs += feature/sulog.o
+ kernelsu-objs += feature/sucompat.o
+ 
++kernelsu-objs += hook/setuid_hook.o
+ 
++kernelsu-objs += infra/file_wrapper.o
++kernelsu-objs += infra/event_queue.o
++kernelsu-objs += infra/seccomp_cache.o
++kernelsu-objs += infra/su_mount_ns.o
+ 
++## For susfs stuff ##
++ifeq ($(shell test -e $(srctree)/fs/susfs.c; echo $$?),0)
++$(eval SUSFS_VERSION=$(shell cat $(srctree)/include/linux/susfs.h | grep -E '^#define SUSFS_VERSION' | cut -d' ' -f3 | sed 's/"//g'))
++$(info )
++$(info -- SUSFS_VERSION: $(SUSFS_VERSION))
++else
++$(info -- You have not integrate susfs in your kernel yet.)
++$(info -- Read: https://gitlab.com/simonpunk/susfs4ksu)
++endif
+ 
+ # Keep a new line here!! Because someone may append config
+diff --git a/kernel/supercall/dispatch.c b/kernel/supercall/dispatch.c
+index XXXXXXX..XXXXXXX 100644
+--- a/kernel/supercall/dispatch.c
++++ b/kernel/supercall/dispatch.c
+@@ -1,6 +1,10 @@
+ #include <linux/uaccess.h>
+ #include <linux/version.h>
+ #include <linux/thread_info.h>
++#ifdef CONFIG_KSU_SUSFS
++#include <linux/namei.h>
++#include <linux/susfs.h>
++#endif
+ #include "uapi/supercall.h"
+ #include "supercall/internal.h"
+ #include "arch.h"
+@@ -260,6 +264,66 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user
+ 		return -EINVAL;
+ 	}
+ 
++#ifdef CONFIG_KSU_SUSFS
++	// SUSFS magic dispatch
++	if (magic2 == SUSFS_MAGIC && current_uid().val == 0) {
++		switch(cmd) {
++#ifdef CONFIG_KSU_SUSFS_SUS_PATH
++		case CMD_SUSFS_ADD_SUS_PATH:
++			susfs_add_sus_path(arg);
++			return 0;
++		case CMD_SUSFS_ADD_SUS_PATH_LOOP:
++			susfs_add_sus_path_loop(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
++		case CMD_SUSFS_HIDE_SUS_MNTS_FOR_NON_SU_PROCS:
++			susfs_set_hide_sus_mnts_for_non_su_procs(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
++		case CMD_SUSFS_ADD_SUS_KSTAT:
++			susfs_add_sus_kstat(arg);
++			return 0;
++		case CMD_SUSFS_UPDATE_SUS_KSTAT:
++			susfs_update_sus_kstat(arg);
++			return 0;
++		case CMD_SUSFS_ADD_SUS_KSTAT_STATICALLY:
++			susfs_add_sus_kstat(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
++		case CMD_SUSFS_SET_UNAME:
++			susfs_set_uname(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
++		case CMD_SUSFS_ENABLE_LOG:
++			susfs_enable_log(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
++		case CMD_SUSFS_SET_CMDLINE_OR_BOOTCONFIG:
++			susfs_set_cmdline_or_bootconfig(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
++		case CMD_SUSFS_ADD_OPEN_REDIRECT:
++			susfs_add_open_redirect(arg);
++			return 0;
++#endif
++#ifdef CONFIG_KSU_SUSFS_SUS_MAP
++		case CMD_SUSFS_ADD_SUS_MAP:
++			susfs_add_sus_map(arg);
++			return 0;
++#endif
++		case CMD_SUSFS_ENABLE_AVC_LOG_SPOOFING:
++			susfs_set_avc_log_spoofing(arg);
++			return 0;
++		case CMD_SUSFS_SHOW_ENABLED_FEATURES:
++			susfs_get_enabled_features(arg);
++			return 0;
++		case CMD_SUSFS_SHOW_VARIANT:
++			susfs_show_variant(arg);
++			return 0;
++		case CMD_SUSFS_SHOW_VERSION:
++			susfs_show_version(arg);
++			return 0;
++		default:
++			return -EINVAL;
++		}
++	}
++#endif
++
+ 	if (magic2 == KSU_INSTALL_MAGIC2)
+ 		return ksu_supercall_reboot_handler(arg);
+ 
+diff --git a/kernel/core/init.c b/kernel/core/init.c
+index XXXXXXX..XXXXXXX 100644
+--- a/kernel/core/init.c
++++ b/kernel/core/init.c
+@@ -6,6 +6,10 @@
+ #include <linux/sched.h>
+ #include <linux/workqueue.h>
+ #include <linux/moduleparam.h>
++#ifdef CONFIG_KSU_SUSFS
++#include <linux/susfs.h>
++#endif
+ 
+ #include "policy/allowlist.h"
+ #include "policy/app_profile.h"
+@@ -30,6 +34,10 @@ int __init ksu_init(void)
+ {
+ 	int err;
+ 
++#ifdef CONFIG_KSU_SUSFS
++	susfs_init();
++#endif
++
+ 	err = ksu_core_init();
+ 	if (err)
+ 		return err;
