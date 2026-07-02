@@ -46,6 +46,9 @@ if [ -z "$KERNEL_DIR" ]; then
     KERNEL_DIR="."
 fi
 
+# Convert to absolute path so fixup scripts work regardless of CWD
+KERNEL_DIR="$(cd "$KERNEL_DIR" && pwd)"
+
 echo "=== SUSFS Universal Auto-Apply ==="
 echo "Kernel: $KERNEL_DIR"
 echo ""
