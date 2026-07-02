@@ -1,0 +1,123 @@
+# =============================================================================
+# workflow-config.yaml — SUSFS Backport Team Workflow Configuration
+# =============================================================================
+# This file configures the AGENTS.md orchestrator for the backport-susf4ksu-legacy
+# project. All settings are consumed by the opencode agent runtime.
+# =============================================================================
+
+team:
+  name: "SUSFS Backport Development Team"
+  size: 3
+  project: "backport-susf4ksu-legacy"
+  leads: []
+
+skills:
+  apply-susfs-patches:
+    enabled: true
+    timeout_seconds: 180
+    retry_count: 2
+    fuzz_level: 5
+    fallback_wiggle: true
+    kernel_version: "4.19"
+    variant: non-gki
+    vendor_flags:
+      mtk: false
+      xiaomi_vermagic: false
+
+  backport-validator:
+    enabled: true
+    timeout_seconds: 300
+    retry_count: 1
+    strict_mode: false
+    required_patches_min: 3
+    severity_cutoff: medium
+    vendor_filter: "xiaomi,mediatek"
+
+workflows:
+  patch-apply:
+    enabled: true
+    strict_mode: false
+    notify_on_complete: true
+    notify_channels: [github-pr-comment]
+    auto_verify: true
+    cleanup_rej: true
+
+  backport-validation:
+    enabled: true
+    strict_mode: false
+    notify_on_complete: true
+    notify_channels: [github-pr-comment]
+    auto_run_on_pr: true
+    auto_run_on_push: true
+    trigger_paths:
+      - "kernel/**"
+      - "fixup/**"
+      - "vendor/**"
+      - "core-scripts/**"
+
+  release-build:
+    enabled: true
+    strict_mode: true
+    notify_channels: [github, email]
+    require_full_pass: true
+    build_userspace: true
+
+  daily-audit:
+    enabled: true
+    schedule: "0 3 * * *"
+    notify_channels: [email]
+    log_retention_days: 30
+
+notifications:
+  critical_issues:
+    channels: [email]
+    recipients: [team@susfs-backport.dev]
+    auto_create_issue: true
+    auto_create_pr: false
+    escalate_after_minutes: 30
+
+  high_issues:
+    channels: [email]
+    recipients: [reviewer@susfs-backport.dev]
+    auto_create_issue: true
+
+  medium_issues:
+    channels: [github-pr-comment]
+    recipients: [pr_author]
+    auto_create_issue: false
+
+  low_issues:
+    channels: [github-pr-comment]
+    recipients: [pr_author]
+    auto_create_issue: false
+
+  summary_reports:
+    channels: [github-pr-comment]
+    frequency: per-workflow
+    include_scores: true
+
+paths:
+  kernel_patches: "kernel/"
+  fixup_scripts: "fixup/"
+  vendor_dir: "vendor/"
+  core_scripts: "core-scripts/"
+  userspace: "userspace/src/"
+  verify_script: "core-scripts/verify.sh"
+  apply_script: "core-scripts/apply.sh"
+
+runtime:
+  max_parallel_skills: 4
+  default_timeout_seconds: 300
+  retry_policy: exponential_backoff
+  max_retry_attempts: 2
+  performance_threshold_percent: 10
+  log_level: info
+
+monitoring:
+  track_skill_performance: true
+  track_workflow_duration: true
+  track_issues_prevented: true
+  track_team_productivity: true
+  metrics_export_format: json
+  metrics_retention_days: 90
+  dashboard_enabled: true

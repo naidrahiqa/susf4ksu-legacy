@@ -7,11 +7,15 @@ import sys
 import re
 
 def fix_selinux(kernel_path):
-    """Patch security/selinux.c for SUSFS function placement."""
-    selinux_file = os.path.join(kernel_path, "security", "selinux.c")
+    """Patch security/selinux.c or security/selinux/hooks.c for SUSFS function placement."""
+    # Check for split selinux directory first (newer kernels)
+    selinux_file = os.path.join(kernel_path, "security", "selinux", "hooks.c")
+    if not os.path.exists(selinux_file):
+        # Fall back to single selinux.c (older kernels)
+        selinux_file = os.path.join(kernel_path, "security", "selinux.c")
     
     if not os.path.exists(selinux_file):
-        print(f"::error::selinux.c not found at {selinux_file}")
+        print(f"::error::selinux/hooks.c or selinux.c not found at {selinux_file}")
         return False
     
     with open(selinux_file, 'r') as f:

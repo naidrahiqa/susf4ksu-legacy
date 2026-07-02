@@ -1,72 +1,69 @@
 # AGENTS.md — SUSFS Backport (Legacy/Universal)
 
-**Backport** dari [simonpunk/susfs4ksu](https://gitlab.com/simonpunk/susfs4ksu.git) — membawa fitur SUSFS v2.2.0+ (SUS_MAP, AVC spoof, sus_su, dll.) ke kernel lawas (4.19, NON-GKI).  
-**Universal** — tidak terikat device tertentu. Script pembantu untuk vendor spesifik (MTK, Xiaomi) dipisahkan.  
-**Dependency project** — bukan standalone. Di-clone dan di-apply ke kernel source via `prepare_build.sh`.
+Backport SUSFS v2.2.0+ features to legacy 4.19 NON-GKI kernels. Universal — not device-specific.
 
-## Patch Application (harus urut)
+---
 
-Jalankan `bash core-scripts/apply.sh <kernel_dir> [--mtk] [--xiaomi-vermagic]` — ini melakukan semua langkah di bawah.  
-Langkah manual jika tidak pakai script:
+## Team Registry
 
-1. **Main SUSFS patch** — `kernel/50_add_susfs_in_kernel-4.19.patch`  
-   `patch -p1 --fuzz=5 < kernel/50_add_susfs_in_kernel-4.19.patch`
+| Role | ID | Core Skill |
+|------|-----|------------|
+| Patcher | `patcher` | `susfs-backport-validator` |
+| Build Tester | `builder` | `susfs-backport-validator` |
+| Troubleshooter | `troubleshooter` | `susfs-backport-validator` |
+| Auditor | `auditor` | `susfs-backport-validator` |
 
-2. **KernelSU-Next patch** — `kernel/KernelSU/10_enable_susfs_for_ksu.patch`  
-   Apply ke `drivers/kernelsu/` (bukan kernel source root). Patch ini juga backport `path_umount`, `get_cred_rcu`, `can_umount` ke kernel 4.19 via Makefile `$(shell ...)`.
+## Core Skill
 
-3. **Additional v2.2.0 patches** — `patches/004-sus_map-proc-maps.patch` (SUS_MAP hooks di `task_mmu.c`) dan `005-avc-log-spoofing.patch` (spoof AVC log di `avc.c`).
+### SUSFS Backport Validator Developer Skill
+- **ID**: `susfs-backport-validator`
+- **File**: `SKILL.md`
+- **Responsibility**: Validate kernel patch sequence, vendor patches (Xiaomi/MediaTek), fixup/ scripts, core-scripts/apply.sh pipeline, SUSFS-SELinux integration
+- **Triggers**: Push to main (patches/**), PR, manual
+- **Input Type**: git-context / code-diff
+- **Output Type**: json
+- **Runtime**: ~300s
+- **Owner**: patcher, auditor
 
-4. **Fixup scripts** (urut):
-   ```bash
-   python3 fixup/fix_susfs_sched.py <kernel_dir>                 # MTK KABI compat
-   python3 fixup/fix_susfs_namespace.py <kernel_dir>             # mount hiding hooks
-   python3 fixup/fix_supercall_susfs.py <supercall.c>            # type conflicts
-   python3 fixup/fix_susfs_selinux.py <kernel_dir>               # selinux.c placement
-   python3 vendor/mediatek/fix_mtk_includes.py <kernel_dir>     # Clang compat MTK headers
-   ```
+## Role Skills
 
-5. **Fix includes** — KernelSU-Next source must use `susfs.h`, not `susfs_def.h`:
-   ```bash
-   find <kernel_dir>/drivers/kernelsu -type f -exec sed -i 's|susfs_def\.h|susfs.h|g' {} +
-   ```
+| Role | Skill File | Responsibility |
+|------|-----------|----------------|
+| Kernel Patcher (SUSFS) | `../../.opencode/skills/kernel-patcher-susfs/SKILL.md` | Apply SUSFS universal/vendor patches; wiggle fallback; fixup scripts; .rej detection |
+| Build Tester | `../../.opencode/skills/build-tester/SKILL.md` | Run apply.sh dry-run; full kernel build; verify SUSFS/SELinux config; QEMU boot test |
+| Code Reviewer | `../../.opencode/skills/code-reviewer/SKILL.md` | Review patch order/headers; shellcheck fixup scripts; enforce no binary blobs |
 
-6. **Vermagic bypass** (opsional, untuk vendor module Xiaomi):
-   `python3 vendor/xiaomi/patch_vermagic.py <kernel_dir>`
+## Workflow Definitions
+
+### Workflow: SUSFS Apply
+**ID**: `susfs-apply`
+**Trigger**: Push to main
+
+**Steps (sequential):**
+1. **Main Patch** → `susfs-backport-validator` (50_add_susfs) → on failure: halt
+2. **KSU Patch** → `susfs-backport-validator` (10_enable_susfs_for_ksu) → on failure: halt
+3. **Extra Patches** → `susfs-backport-validator` (004, 005) → on failure: halt
+4. **Fixups** → `susfs-backport-validator` (Python fixups) → on failure: halt
+5. **Verify** → `susfs-backport-validator` (verify.sh) → on failure: halt
+6. **Build Test** → `susfs-backport-validator` → on failure: notify_only
+
+**Est. Duration**: ~900 seconds
 
 ## Critical Constraints
 
-- **Kernel 4.19 ONLY** — patch dari upstream 5.x/6.x tidak akan apply.
-- **FUSE passthrough DISABLED** — `CONFIG_FUSE_PASSTHROUGH` causes deadlock.
-- **MTK vendor files sering conflict**: `mm/oom_kill.c`, `fs/open.c`, `kernel/sysctl.c`. Patch dengan `--fuzz=5`, fallback ke `wiggle` jika tersedia.
-- **`fixup/gen_extra_hunks.py`** — generate extra diff hunks untuk v2.2.0 features (SUS_MAP, AVC spoof) dan append ke patch utama. Dijalankan manual, di-`.gitignore`.
-- **`.rej` files** = gagal patch. Cari dengan `core-scripts/verify.sh`.
-- **`legacy-target/`, `upstream-419/`, `upstream-latest/`** = reference clones upstream, isinya kosong di repo (di-`.gitignore`), diisi saat `prepare_build.sh` clone.
+- **Patch order is critical**: Main → KSU → Additional → Fixups
+- **Kernel 4.19 ONLY**
+- **wiggle fallback** if `--fuzz=5` fails
+- **Check .rej files** after each patch step
 
-## Build SUSFS CLI Tool
+## Project Context
 
-```bash
-cd userspace/src && ndk-build
+```json
+{
+  "project_name": "SUSFS Backport",
+  "project_type": "kernel",
+  "primary_languages": ["C", "Shell", "Python"],
+  "ci_cd_platform": "github-actions",
+  "stage": "maintenance"
+}
 ```
-Hasilnya `ksu_susfs` binary untuk `arm64-v8a`. Pre-built binary sudah ada di `userspace/arm64/susfs`.
-
-## Key Files
-
-| File | Isi |
-|------|-----|
-| `kernel/fs/susfs.c` | Implementasi SUSFS kernel module (1118 baris) |
-| `kernel/include/linux/susfs.h` | Header SUSFS (included dari KernelSU) |
-| `kernel/KernelSU/10_enable_susfs_for_ksu.patch` | Patch KernelSU source + Kconfig options |
-| `patches/004-sus_map-proc-maps.patch` | SUS_MAP hooks |
-| `patches/005-avc-log-spoofing.patch` | AVC log spoofing |
-| `core-scripts/verify.sh` | Verification script — jalankan setelah apply |
-| `core-scripts/apply.sh` | Auto-apply script (bash) |
-
-## Auto-apply script (`core-scripts/apply.sh`)
-
-Mendeteksi apakah SUSFS sudah diapply (cek `fs/susfs.c`), apply main patch dengan `--fuzz=5`, fallback ke `wiggle`, lalu apply semua `patches/*.patch`, dan semua fixup scripts. Menerima flag `--mtk` dan `--xiaomi-vermagic` untuk perbaikan vendor khusus. **Idempotent** — skip jika `fs/susfs.c` sudah ada.
-
-## Upstream
-
-- Original: `simonpunk/susfs4ksu` branch `kernel-4.19`
-- Reference clones: `upstream-419/` (branch kernel-4.19), `upstream-latest/` (branch `main` — kernel 5.x/6.x, jangan dicampur)
